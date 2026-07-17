@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Layouts
-import QtCore
 
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.components as PlasmaComponents
@@ -12,38 +11,89 @@ PlasmoidItem {
 
     property string vpnState: "disconnected"
     property string lastMessage: ""
+    property double connectedSince: 0
+    property int clockTick: 0
 
     readonly property string helper:
         "$HOME/.local/bin/upclink-plasma-control"
 
     readonly property string stateText: {
-        if (vpnState === "connected") {
+        switch (vpnState) {
+        case "connected":
             return "Conectada"
+        case "connecting":
+            return "Autenticando"
+        case "error":
+            return "Error"
+        default:
+            return "Desconectada"
         }
+    }
 
-        if (vpnState === "connecting") {
-            return "Esperando autenticación SSO"
+    readonly property string stateDescription: {
+        switch (vpnState) {
+        case "connected":
+            return "El túnel VPN está activo."
+        case "connecting":
+            return "Completa la autenticación UPC en el navegador."
+        case "error":
+            return "No se ha podido completar la operación."
+        default:
+            return "La conexión VPN no está activa."
         }
-
-        return "Desconectada"
     }
 
     readonly property color stateColor: {
-        if (vpnState === "connected") {
+        switch (vpnState) {
+        case "connected":
             return "#27ae60"
-        }
-
-        if (vpnState === "connecting") {
+        case "connecting":
             return "#f1c40f"
+        case "error":
+            return "#e74c3c"
+        default:
+            return "#7f8c8d"
+        }
+    }
+
+    readonly property string elapsedText: {
+        clockTick
+
+        if (vpnState !== "connected" || connectedSince === 0) {
+            return ""
         }
 
-        return "#7f8c8d"
+        const seconds = Math.max(
+            0,
+            Math.floor((Date.now() - connectedSince) / 1000)
+        )
+
+        const hours = Math.floor(seconds / 3600)
+        const minutes = Math.floor((seconds % 3600) / 60)
+        const remainingSeconds = seconds % 60
+
+        const mm = String(minutes).padStart(2, "0")
+        const ss = String(remainingSeconds).padStart(2, "0")
+
+        if (hours > 0) {
+            return hours + ":" + mm + ":" + ss
+        }
+
+        return mm + ":" + ss
     }
 
     toolTipMainText: "UPClink VPN"
     toolTipSubText: stateText
 
     Plasmoid.icon: "network-vpn"
+
+    onVpnStateChanged: {
+        if (vpnState === "connected" && connectedSince === 0) {
+            connectedSince = Date.now()
+        } else if (vpnState !== "connected") {
+            connectedSince = 0
+        }
+    }
 
     function refreshState() {
         const command = helper + " status"
@@ -55,6 +105,12 @@ PlasmoidItem {
 
     function runAction(actionName) {
         const command = helper + " " + actionName
+
+        lastMessage = ""
+
+        if (actionName === "connect") {
+            vpnState = "connecting"
+        }
 
         if (actionSource.connectedSources.indexOf(command) === -1) {
             actionSource.connectSource(command)
@@ -96,6 +152,7 @@ PlasmoidItem {
                 String(data["stderr"] || "").trim()
 
             if (errorOutput.length > 0) {
+                root.vpnState = "error"
                 root.lastMessage = errorOutput
             } else if (standardOutput.length > 0) {
                 root.lastMessage = standardOutput
@@ -114,6 +171,13 @@ PlasmoidItem {
     }
 
     Timer {
+        interval: 1000
+        running: root.vpnState === "connected"
+        repeat: true
+        onTriggered: root.clockTick++
+    }
+
+    Timer {
         id: refreshDelay
 
         interval: 800
@@ -124,19 +188,15 @@ PlasmoidItem {
     Component.onCompleted: refreshState()
 
     compactRepresentation: MouseArea {
-        id: compactView
-
         implicitWidth: Kirigami.Units.iconSizes.smallMedium
         implicitHeight: Kirigami.Units.iconSizes.smallMedium
 
         hoverEnabled: true
-
         onClicked: root.expanded = !root.expanded
 
         Kirigami.Icon {
             anchors.fill: parent
             anchors.margins: 2
-
             source: "network-vpn"
         }
 
@@ -156,20 +216,19 @@ PlasmoidItem {
     }
 
     fullRepresentation: Item {
-        Layout.minimumWidth: Kirigami.Units.gridUnit * 18
-        Layout.preferredWidth: Kirigami.Units.gridUnit * 20
-
-        Layout.minimumHeight: Kirigami.Units.gridUnit * 14
-        Layout.preferredHeight: Kirigami.Units.gridUnit * 16
+        Layout.minimumWidth: Kirigami.Units.gridUnit * 19
+        Layout.preferredWidth: Kirigami.Units.gridUnit * 21
+        Layout.minimumHeight: Kirigami.Units.gridUnit * 17
+        Layout.preferredHeight: Kirigami.Units.gridUnit * 19
 
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: Kirigami.Units.largeSpacing
-
             spacing: Kirigami.Units.largeSpacing
 
             RowLayout {
                 Layout.fillWidth: true
+                spacing: Kirigami.Units.largeSpacing
 
                 Kirigami.Icon {
                     source: "network-vpn"
@@ -187,47 +246,100 @@ PlasmoidItem {
 
                     Kirigami.Heading {
                         text: "UPClink VPN"
-                        level: 3
+                        level: 2
                     }
 
+                    PlasmaComponents.Label {
+                        text: "Universitat Politècnica de Catalunya"
+                        opacity: 0.7
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight:
+                    statusLayout.implicitHeight
+                    + Kirigami.Units.largeSpacing * 2
+
+                radius: Kirigami.Units.smallSpacing
+                color: Kirigami.Theme.backgroundColor
+                border.width: 1
+                border.color: root.stateColor
+
+                ColumnLayout {
+                    id: statusLayout
+
+                    anchors.fill: parent
+                    anchors.margins: Kirigami.Units.largeSpacing
+                    spacing: Kirigami.Units.smallSpacing
+
                     RowLayout {
+                        Layout.fillWidth: true
+
                         Rectangle {
-                            width: 12
-                            height: 12
-                            radius: 6
+                            width: 14
+                            height: 14
+                            radius: 7
                             color: root.stateColor
                         }
 
                         PlasmaComponents.Label {
                             text: root.stateText
                             font.bold: true
+                            Layout.fillWidth: true
+                        }
+
+                        PlasmaComponents.BusyIndicator {
+                            visible: root.vpnState === "connecting"
+                            running: visible
+
+                            Layout.preferredWidth:
+                                Kirigami.Units.iconSizes.small
+
+                            Layout.preferredHeight:
+                                Kirigami.Units.iconSizes.small
                         }
                     }
+
+                    PlasmaComponents.Label {
+                        text: root.stateDescription
+                        wrapMode: Text.WordWrap
+                        opacity: 0.8
+                        Layout.fillWidth: true
+                    }
+
+                    PlasmaComponents.Label {
+                        visible: root.vpnState === "connected"
+                        text: "Tiempo conectado: " + root.elapsedText
+                        font.bold: true
+                    }
                 }
-            }
-
-            PlasmaComponents.Label {
-                Layout.fillWidth: true
-
-                visible: root.vpnState === "connecting"
-                text: "Introduce la contraseña en Konsole y después abre la autenticación UPC."
-                wrapMode: Text.WordWrap
             }
 
             PlasmaComponents.Button {
                 Layout.fillWidth: true
 
                 text: "Conectar"
-                enabled: root.vpnState === "disconnected"
+                icon.name: "network-connect"
 
+                visible: root.vpnState === "disconnected"
+                         || root.vpnState === "error"
+
+                enabled: visible
                 onClicked: root.runAction("connect")
             }
 
             PlasmaComponents.Button {
                 Layout.fillWidth: true
 
-                text: "Abrir autenticación SSO"
-                enabled: root.vpnState === "connecting"
+                text: "Abrir autenticación UPC"
+                icon.name: "internet-web-browser"
+
+                visible: root.vpnState === "connecting"
+                enabled: visible
 
                 onClicked: root.runAction("sso")
             }
@@ -236,8 +348,12 @@ PlasmoidItem {
                 Layout.fillWidth: true
 
                 text: "Desconectar"
-                enabled: root.vpnState !== "disconnected"
+                icon.name: "network-disconnect"
 
+                visible: root.vpnState === "connecting"
+                         || root.vpnState === "connected"
+
+                enabled: visible
                 onClicked: root.runAction("disconnect")
             }
 
@@ -252,6 +368,7 @@ PlasmoidItem {
                 text: root.lastMessage
                 opacity: 0.7
                 wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
             }
         }
     }
