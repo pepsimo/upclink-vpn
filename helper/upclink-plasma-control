@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+set -u
+
+VPN_HOST="myupclink.upc.edu:443"
+SAML_URL="https://myupclink.upc.edu:443/remote/saml/start?redirect=1"
+VPN_BIN="/usr/bin/openfortivpn"
+
+vpn_running() {
+    /usr/bin/pgrep -x openfortivpn >/dev/null 2>&1
+}
+
+vpn_connected() {
+    shopt -s nullglob
+    local interfaces=(/sys/class/net/ppp*)
+    ((${#interfaces[@]} > 0))
+}
+
+case "${1:-}" in
+    status)
+        if vpn_running; then
+            if vpn_connected; then
+                echo "connected"
+            else
+                echo "connecting"
+            fi
+        else
+            echo "disconnected"
+        fi
+        ;;
+
+    connect)
+        if vpn_running; then
+            echo "already-running"
+            exit 0
+        fi
+
+        nohup /usr/bin/konsole \
+            --hold \
+            -e /usr/bin/sudo "$VPN_BIN" "$VPN_HOST" --saml-login \
+            >/dev/null 2>&1 &
+
+        echo "launching"
+        ;;
+
+    sso)
+        /usr/bin/xdg-open "$SAML_URL" >/dev/null 2>&1 &
+        echo "opening-sso"
+        ;;
+
+    disconnect)
+        if ! vpn_running; then
+            echo "already-disconnected"
+            exit 0
+        fi
+
+        if [[ -x /usr/bin/pkexec ]]; then
+            /usr/bin/pkexec /usr/bin/pkill -INT -x openfortivpn
+        else
+            nohup /usr/bin/konsole \
+                --hold \
+                -e /usr/bin/sudo /usr/bin/pkill -INT -x openfortivpn \
+                >/dev/null 2>&1 &
+        fi
+
+        echo "disconnect-requested"
+        ;;
+
+    *)
+        echo "Uso: $0 {status|connect|sso|disconnect}" >&2
+        exit 2
+        ;;
+esac

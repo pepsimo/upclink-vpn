@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Indicador UPClink VPN
+Comment=Estado y control de la conexión UPClink
+Exec=/home/pep/.local/bin/upclink-vpn-tray.py
+Icon=network-vpn
+Terminal=false
+StartupNotify=false
+X-KDE-autostart-after=panel

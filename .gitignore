@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.log
+*.cookie
+*.cookies
+*.token
+*.secret
+*.conf
+build/
+dist/
+rpmbuild/

@@ -1,0 +1,18 @@
+{
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "Pep"
+            }
+        ],
+        "Category": "Network",
+        "Description": "Control gráfico de la conexión UPClink VPN",
+        "Icon": "network-vpn",
+        "Id": "local.pep.upclinkvpn",
+        "License": "GPL-3.0-or-later",
+        "Name": "UPClink VPN",
+        "Version": "0.1.0"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
