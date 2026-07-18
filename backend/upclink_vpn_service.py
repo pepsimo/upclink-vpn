@@ -1,0 +1,460 @@
+#!/usr/bin/python3
+
+import os
+import re
+import signal
+import subprocess
+import threading
+import time
+from pathlib import Path
+
+import dbus
+import dbus.service
+from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib
+
+
+BUS_NAME = "org.upclink.VPN"
+OBJECT_PATH = "/org/upclink/VPN"
+INTERFACE = "org.upclink.VPN"
+
+POLKIT_ACTION = "org.upclink.vpn.manage"
+
+VPN_HOST = "myupclink.upc.edu:443"
+SAML_URL = (
+    "https://myupclink.upc.edu:443/"
+    "remote/saml/start?redirect=1"
+)
+
+PPP_INTERFACE = "upclink0"
+
+OPENFORTIVPN = "/usr/bin/openfortivpn"
+PKCHECK = "/usr/bin/pkcheck"
+
+
+class NotAuthorized(dbus.DBusException):
+    _dbus_error_name = "org.upclink.VPN.Error.NotAuthorized"
+
+
+class OperationFailed(dbus.DBusException):
+    _dbus_error_name = "org.upclink.VPN.Error.OperationFailed"
+
+
+def sanitize(text):
+    """Elimina cookies, tokens y parámetros SAML."""
+
+    value = text.strip()
+
+    replacements = (
+        (
+            r"(?i)(SVPNCOOKIE\s*=\s*)\S+",
+            r"\1[OCULTO]",
+        ),
+        (
+            r"(?i)([?&]id=)[^&\s]+",
+            r"\1[OCULTO]",
+        ),
+        (
+            r"(?i)((?:cookie|token|password)\s*[:=]\s*)\S+",
+            r"\1[OCULTO]",
+        ),
+        (
+            r"(?i)(SAMLResponse\s*[:=]\s*)\S+",
+            r"\1[OCULTO]",
+        ),
+    )
+
+    for pattern, replacement in replacements:
+        value = re.sub(pattern, replacement, value)
+
+    return value[:500]
+
+
+class UpclinkVPNService(dbus.service.Object):
+
+    def __init__(self, bus):
+        self.bus_name = dbus.service.BusName(
+            BUS_NAME,
+            bus=bus,
+            do_not_queue=True,
+        )
+
+        super().__init__(
+            self.bus_name,
+            OBJECT_PATH,
+        )
+
+        self.process = None
+        self.state = "disconnected"
+        self.message = ""
+        self.connected_since = 0
+        self.last_error = ""
+        self.disconnect_requested = False
+
+        GLib.timeout_add_seconds(
+            1,
+            self.poll_process,
+        )
+
+    @dbus.service.signal(
+        INTERFACE,
+        signature="ssx",
+    )
+    def StateChanged(
+        self,
+        state,
+        message,
+        connected_since,
+    ):
+        pass
+
+    def set_state(
+        self,
+        state,
+        message="",
+        connected_since=None,
+    ):
+        message = sanitize(message)
+
+        changed = (
+            state != self.state
+            or message != self.message
+        )
+
+        self.state = state
+        self.message = message
+
+        if connected_since is not None:
+            self.connected_since = connected_since
+        elif state != "connected":
+            self.connected_since = 0
+
+        if changed:
+            self.StateChanged(
+                self.state,
+                self.message,
+                self.connected_since,
+            )
+
+    def authorize(self, sender):
+        if not sender:
+            raise NotAuthorized(
+                "No se pudo identificar al solicitante."
+            )
+
+        try:
+            result = subprocess.run(
+                [
+                    PKCHECK,
+                    "--action-id",
+                    POLKIT_ACTION,
+                    "--system-bus-name",
+                    sender,
+                    "--allow-user-interaction",
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+
+        except subprocess.TimeoutExpired as error:
+            raise NotAuthorized(
+                "La autorización ha caducado."
+            ) from error
+
+        if result.returncode != 0:
+            message = (
+                sanitize(result.stderr)
+                or "Autorización denegada."
+            )
+
+            raise NotAuthorized(message)
+
+    def process_running(self):
+        return (
+            self.process is not None
+            and self.process.poll() is None
+        )
+
+    @staticmethod
+    def interface_present():
+        return Path(
+            "/sys/class/net",
+            PPP_INTERFACE,
+        ).exists()
+
+    def read_output(self, process):
+        if process.stdout is None:
+            return
+
+        for line in process.stdout:
+            GLib.idle_add(
+                self.handle_output,
+                process,
+                line,
+            )
+
+    def wait_process(self, process):
+        return_code = process.wait()
+
+        GLib.idle_add(
+            self.process_finished,
+            process,
+            return_code,
+        )
+
+    def handle_output(
+        self,
+        process,
+        raw_line,
+    ):
+        if process is not self.process:
+            return GLib.SOURCE_REMOVE
+
+        line = sanitize(raw_line)
+        lower = line.lower()
+
+        if "authenticated." in lower:
+            self.set_state(
+                "connecting",
+                "Autenticación completada. "
+                "Creando el túnel…",
+            )
+
+        if (
+            f"interface {PPP_INTERFACE} is up"
+            in lower
+            or "tunnel is up and running"
+            in lower
+        ):
+            started = (
+                self.connected_since
+                or int(time.time())
+            )
+
+            self.set_state(
+                "connected",
+                "",
+                started,
+            )
+
+        if "error:" in lower:
+            self.last_error = line
+
+        return GLib.SOURCE_REMOVE
+
+    def process_finished(
+        self,
+        process,
+        return_code,
+    ):
+        if process is not self.process:
+            return GLib.SOURCE_REMOVE
+
+        requested = self.disconnect_requested
+        last_error = self.last_error
+
+        self.process = None
+        self.disconnect_requested = False
+        self.last_error = ""
+
+        if requested:
+            self.set_state("disconnected")
+
+        elif return_code == 0:
+            self.set_state(
+                "disconnected",
+                "La conexión ha finalizado.",
+            )
+
+        else:
+            message = (
+                last_error
+                or (
+                    "openfortivpn terminó con "
+                    f"el código {return_code}."
+                )
+            )
+
+            self.set_state(
+                "error",
+                message,
+            )
+
+        return GLib.SOURCE_REMOVE
+
+    def poll_process(self):
+        if (
+            self.process_running()
+            and self.interface_present()
+        ):
+            started = (
+                self.connected_since
+                or int(time.time())
+            )
+
+            self.set_state(
+                "connected",
+                "",
+                started,
+            )
+
+        return GLib.SOURCE_CONTINUE
+
+    @dbus.service.method(
+        INTERFACE,
+        in_signature="",
+        out_signature="a{sv}",
+    )
+    def GetStatus(self):
+        if self.process_running():
+            pid = self.process.pid
+        else:
+            pid = 0
+
+        return dbus.Dictionary(
+            {
+                "state": dbus.String(
+                    self.state
+                ),
+                "message": dbus.String(
+                    self.message
+                ),
+                "authentication_url": dbus.String(
+                    SAML_URL
+                ),
+                "connected_since": dbus.Int64(
+                    self.connected_since
+                ),
+                "pid": dbus.UInt32(pid),
+            },
+            signature="sv",
+        )
+
+    @dbus.service.method(
+        INTERFACE,
+        in_signature="",
+        out_signature="s",
+    )
+    def GetAuthenticationUrl(self):
+        return SAML_URL
+
+    @dbus.service.method(
+        INTERFACE,
+        in_signature="",
+        out_signature="s",
+        sender_keyword="sender",
+    )
+    def Connect(self, sender=None):
+        self.authorize(sender)
+
+        if self.process_running():
+            return "already-running"
+
+        if self.interface_present():
+            raise OperationFailed(
+                f"La interfaz {PPP_INTERFACE} "
+                "ya está en uso."
+            )
+
+        command = [
+            OPENFORTIVPN,
+            VPN_HOST,
+            "--saml-login=8020",
+            f"--pppd-ifname={PPP_INTERFACE}",
+        ]
+
+        try:
+            self.process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                start_new_session=True,
+                close_fds=True,
+            )
+
+        except OSError as error:
+            self.process = None
+
+            self.set_state(
+                "error",
+                str(error),
+            )
+
+            raise OperationFailed(
+                sanitize(str(error))
+            ) from error
+
+        self.disconnect_requested = False
+        self.last_error = ""
+        self.connected_since = 0
+
+        self.set_state(
+            "authenticating",
+            "Abre la autenticación UPC "
+            "en el navegador.",
+        )
+
+        threading.Thread(
+            target=self.read_output,
+            args=(self.process,),
+            daemon=True,
+        ).start()
+
+        threading.Thread(
+            target=self.wait_process,
+            args=(self.process,),
+            daemon=True,
+        ).start()
+
+        return "authentication-required"
+
+    @dbus.service.method(
+        INTERFACE,
+        in_signature="",
+        out_signature="s",
+        sender_keyword="sender",
+    )
+    def Disconnect(self, sender=None):
+        self.authorize(sender)
+
+        if not self.process_running():
+            self.set_state("disconnected")
+            return "already-disconnected"
+
+        self.disconnect_requested = True
+
+        try:
+            os.killpg(
+                self.process.pid,
+                signal.SIGINT,
+            )
+
+        except ProcessLookupError:
+            self.set_state("disconnected")
+
+        return "disconnect-requested"
+
+
+def main():
+    DBusGMainLoop(set_as_default=True)
+
+    bus = dbus.SystemBus()
+    service = UpclinkVPNService(bus)
+
+    loop = GLib.MainLoop()
+
+    # Mantener viva la referencia del servicio.
+    service
+
+    loop.run()
+
+
+if __name__ == "__main__":
+    main()
