@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=org.upclink.VPN
+Exec=/usr/libexec/upclink-vpn-service
+User=root
+SystemdService=upclink-vpn.service

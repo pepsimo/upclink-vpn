@@ -1,0 +1,16 @@
+[Unit]
+Description=Servicio del sistema UPClink VPN
+After=dbus.service network.target
+
+[Service]
+Type=dbus
+BusName=org.upclink.VPN
+ExecStart=/usr/libexec/upclink-vpn-service
+User=root
+Group=root
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+PrivateTmp=true
+ProtectHome=true
+UMask=0077
