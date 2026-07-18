@@ -56,13 +56,65 @@ cmake --build build --target package --parallel
 
 El paquete resultante se genera en `dist/`.
 
+## Descarga
+
+Abre la [última versión publicada en GitHub](https://github.com/pepsimo/upclink-vpn/releases/latest).
+
+En el apartado **Assets**, descarga estos tres archivos:
+
+1. `upclink-vpn-1.0.0-1.x86_64.rpm` — instalador de la aplicación.
+2. `upclink-vpn-1.0.0-1.x86_64.rpm.sha256` — comprobación de integridad.
+3. `RPM-GPG-KEY-Pep-Simo.asc` — clave pública para verificar la firma del RPM.
+
+Los archivos **Source code (zip)** y **Source code (tar.gz)** los genera GitHub automáticamente y no son necesarios para instalar la aplicación.
+
 ## Instalación
 
+Guarda los tres archivos en la misma carpeta. Si están en `Descargas`, abre una terminal y ejecuta:
+
 ```bash
-sudo zypper install ./dist/upclink-vpn-1.0.0-1.x86_64.rpm
+cd ~/Descargas
 ```
 
-Después de instalarlo, añade **UPClink VPN** al panel de Plasma desde el selector de elementos gráficos.
+Comprueba que el RPM descargado no esté dañado ni haya sido modificado:
+
+```bash
+sha256sum -c upclink-vpn-1.0.0-1.x86_64.rpm.sha256
+```
+
+El resultado debe indicar que **la suma coincide**.
+
+Importa la clave pública de firma:
+
+```bash
+sudo rpm --import RPM-GPG-KEY-Pep-Simo.asc
+```
+
+Instala UPClink VPN y sus dependencias:
+
+```bash
+sudo zypper install ./upclink-vpn-1.0.0-1.x86_64.rpm
+```
+
+## Añadir UPClink VPN al panel
+
+1. Haz clic con el botón derecho en una zona vacía del panel inferior de KDE.
+2. Selecciona **Añadir elementos gráficos**.
+3. Busca **UPClink VPN**.
+4. Arrastra el widget hasta el panel o haz doble clic sobre él para añadirlo.
+
+Plasma no añade automáticamente el widget para evitar modificar sin permiso la configuración personal del escritorio.
+
+## Conectarse a UPClink
+
+La conexión se realiza en dos pasos:
+
+1. Pulsa el icono de **UPClink VPN** del panel y selecciona **Conectar**. Si KDE solicita autorización, introduce la contraseña de administrador en la ventana de PolicyKit.
+2. Pulsa **Abrir autenticación SSO** y completa la identificación de la UPC en el navegador.
+
+Cuando se establezca la conexión, el widget mostrará el estado **Conectado** y el tiempo de conexión.
+
+Para finalizar la VPN, abre nuevamente el widget y pulsa **Desconectar**.
 
 ## Desinstalación
 
