@@ -5,7 +5,7 @@ After=dbus.service network.target
 [Service]
 Type=dbus
 BusName=org.upclink.VPN
-ExecStart=/usr/libexec/upclink-vpn-service
+ExecStart=@CMAKE_INSTALL_FULL_LIBEXECDIR@/upclink-vpn-service
 User=root
 Group=root
 Restart=on-failure

@@ -1,28 +1,36 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.components as PlasmaComponents
 import org.kde.plasma.plasmoid
-import org.kde.plasma.plasma5support as Plasma5Support
+import org.upclink.vpn 1.0
 
 PlasmoidItem {
     id: root
 
-    property string vpnState: "disconnected"
+    VpnController {
+        id: vpn
+    }
+
+    readonly property string vpnState: vpn.state
     property string lastMessage: ""
-    property double connectedSince: 0
+    readonly property double connectedSince:
+        vpn.connectedSince > 0 ? vpn.connectedSince * 1000 : 0
     property int clockTick: 0
 
-    readonly property string helper:
-        "$HOME/.local/bin/upclink-plasma-control"
+
 
     readonly property string stateText: {
         switch (vpnState) {
         case "connected":
             return "Conectada"
-        case "connecting":
+        case "authenticating":
             return "Autenticando"
+        case "connecting":
+            return "Conectando"
         case "error":
             return "Error"
         default:
@@ -31,11 +39,17 @@ PlasmoidItem {
     }
 
     readonly property string stateDescription: {
+        if (vpn.message.length > 0) {
+            return vpn.message
+        }
+
         switch (vpnState) {
         case "connected":
             return "El túnel VPN está activo."
-        case "connecting":
+        case "authenticating":
             return "Completa la autenticación UPC en el navegador."
+        case "connecting":
+            return "Autenticación completada. Creando el túnel VPN."
         case "error":
             return "No se ha podido completar la operación."
         default:
@@ -47,6 +61,7 @@ PlasmoidItem {
         switch (vpnState) {
         case "connected":
             return "#27ae60"
+        case "authenticating":
         case "connecting":
             return "#f1c40f"
         case "error":
@@ -87,87 +102,29 @@ PlasmoidItem {
 
     Plasmoid.icon: "network-vpn"
 
-    onVpnStateChanged: {
-        if (vpnState === "connected" && connectedSince === 0) {
-            connectedSince = Date.now()
-        } else if (vpnState !== "connected") {
-            connectedSince = 0
-        }
-    }
-
-    function refreshState() {
-        const command = helper + " status"
-
-        if (statusSource.connectedSources.indexOf(command) === -1) {
-            statusSource.connectSource(command)
-        }
-    }
-
     function runAction(actionName) {
-        const command = helper + " " + actionName
-
         lastMessage = ""
 
         if (actionName === "connect") {
-            vpnState = "connecting"
-        }
+            if (!vpn.connectVpn()) {
+                lastMessage = "No se ha podido solicitar la conexión por D-Bus."
+                return
+            }
+        } else if (actionName === "disconnect") {
+            if (!vpn.disconnectVpn()) {
+                lastMessage = "No se ha podido solicitar la desconexión por D-Bus."
+                return
+            }
+        } else if (actionName === "sso") {
+            const url = vpn.authenticationUrl()
 
-        if (actionSource.connectedSources.indexOf(command) === -1) {
-            actionSource.connectSource(command)
-        }
-
-        refreshDelay.restart()
-    }
-
-    Plasma5Support.DataSource {
-        id: statusSource
-
-        engine: "executable"
-        connectedSources: []
-
-        onNewData: function(sourceName, data) {
-            const output = String(data["stdout"] || "").trim()
-
-            if (output === "connected"
-                    || output === "connecting"
-                    || output === "disconnected") {
-                root.vpnState = output
+            if (url.length === 0) {
+                lastMessage = "La URL de autenticación todavía no está disponible."
+                return
             }
 
-            disconnectSource(sourceName)
+            Qt.openUrlExternally(url)
         }
-    }
-
-    Plasma5Support.DataSource {
-        id: actionSource
-
-        engine: "executable"
-        connectedSources: []
-
-        onNewData: function(sourceName, data) {
-            const standardOutput =
-                String(data["stdout"] || "").trim()
-
-            const errorOutput =
-                String(data["stderr"] || "").trim()
-
-            if (errorOutput.length > 0) {
-                root.vpnState = "error"
-                root.lastMessage = errorOutput
-            } else if (standardOutput.length > 0) {
-                root.lastMessage = standardOutput
-            }
-
-            disconnectSource(sourceName)
-            refreshDelay.restart()
-        }
-    }
-
-    Timer {
-        interval: 1500
-        running: true
-        repeat: true
-        onTriggered: root.refreshState()
     }
 
     Timer {
@@ -176,16 +133,6 @@ PlasmoidItem {
         repeat: true
         onTriggered: root.clockTick++
     }
-
-    Timer {
-        id: refreshDelay
-
-        interval: 800
-        repeat: false
-        onTriggered: root.refreshState()
-    }
-
-    Component.onCompleted: refreshState()
 
     compactRepresentation: MouseArea {
         implicitWidth: Kirigami.Units.iconSizes.smallMedium
@@ -280,8 +227,8 @@ PlasmoidItem {
                         Layout.fillWidth: true
 
                         Rectangle {
-                            width: 14
-                            height: 14
+                            Layout.preferredWidth: 14
+                            Layout.preferredHeight: 14
                             radius: 7
                             color: root.stateColor
                         }
@@ -293,7 +240,8 @@ PlasmoidItem {
                         }
 
                         PlasmaComponents.BusyIndicator {
-                            visible: root.vpnState === "connecting"
+                            visible: root.vpnState === "authenticating"
+                                     || root.vpnState === "connecting"
                             running: visible
 
                             Layout.preferredWidth:
@@ -338,7 +286,7 @@ PlasmoidItem {
                 text: "Abrir autenticación UPC"
                 icon.name: "internet-web-browser"
 
-                visible: root.vpnState === "connecting"
+                visible: root.vpnState === "authenticating"
                 enabled: visible
 
                 onClicked: root.runAction("sso")
@@ -350,7 +298,8 @@ PlasmoidItem {
                 text: "Desconectar"
                 icon.name: "network-disconnect"
 
-                visible: root.vpnState === "connecting"
+                visible: root.vpnState === "authenticating"
+                         || root.vpnState === "connecting"
                          || root.vpnState === "connected"
 
                 enabled: visible
