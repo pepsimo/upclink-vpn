@@ -99,7 +99,7 @@ set(CPACK_PACKAGE_VENDOR "Pep Simo")
 set(CPACK_PACKAGE_CONTACT "https://www.pepsimo.eu")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
-    "Plasmoide profesional para gestionar UPClink VPN en KDE Plasma 6"
+    "UPClink VPN widget for KDE Plasma 6"
 )
 set(CPACK_PACKAGE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist")
 set(CPACK_PACKAGE_CHECKSUM "SHA256")
@@ -115,11 +115,14 @@ set(CPACK_RPM_PACKAGE_LICENSE "GPL-3.0-or-later")
 set(CPACK_RPM_PACKAGE_GROUP "Productivity/Networking/System")
 set(CPACK_RPM_PACKAGE_URL "https://www.pepsimo.eu")
 set(CPACK_RPM_PACKAGE_DESCRIPTION
-    "UPClink VPN permite conectar, autenticar y desconectar la VPN de la Universitat Politècnica de Catalunya desde KDE Plasma 6. Utiliza un backend D-Bus protegido mediante PolicyKit y openfortivpn."
+    "UPClink VPN connects and disconnects the Polytechnic University of Catalonia virtual private network from KDE Plasma 6. Authentication takes place in the user's web browser. Privileged operations are handled by a system service protected through D-Bus and PolicyKit."
 )
 set(CPACK_RPM_PACKAGE_AUTOREQPROV ON)
 set(CPACK_RPM_PACKAGE_REQUIRES
-    "openfortivpn, polkit, dbus-1, python3-dbus-python, python3-gobject, plasma6-workspace, kf6-kirigami-imports, libplasma6-components"
+    "openfortivpn, polkit, dbus-1, python3-dbus-python, python3-gobject, plasma6-workspace, kf6-kirigami-imports"
+)
+set(CPACK_RPM_PRE_INSTALL_SCRIPT_FILE
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/rpm/pre-install.sh"
 )
 set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE
     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/rpm/post-install.sh"
@@ -164,5 +167,7 @@ if(BUILD_TESTING)
             -v
     )
 endif()
+
+set(CPACK_STRIP_FILES TRUE)
 
 include(CPack)
