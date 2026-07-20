@@ -51,7 +51,7 @@ openfortivpn
 cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 cmake --build build --target package --parallel
-./packaging/rpm/sign-package.sh dist/upclink-vpn-1.0.0-1.x86_64.rpm
+./packaging/rpm/sign-package.sh dist/upclink-vpn-1.0.1-1.x86_64.rpm
 ```
 
 El paquete resultante se genera en `dist/`.
@@ -62,8 +62,8 @@ Abre la [última versión publicada en GitHub](https://github.com/pepsimo/upclin
 
 En el apartado **Assets**, descarga estos tres archivos:
 
-1. `upclink-vpn-1.0.0-1.x86_64.rpm` — instalador de la aplicación.
-2. `upclink-vpn-1.0.0-1.x86_64.rpm.sha256` — comprobación de integridad.
+1. `upclink-vpn-1.0.1-1.x86_64.rpm` — instalador de la aplicación.
+2. `upclink-vpn-1.0.1-1.x86_64.rpm.sha256` — comprobación de integridad.
 3. `RPM-GPG-KEY-Pep-Simo.asc` — clave pública para verificar la firma del RPM.
 
 Los archivos **Source code (zip)** y **Source code (tar.gz)** los genera GitHub automáticamente y no son necesarios para instalar la aplicación.
@@ -79,7 +79,7 @@ cd ~/Descargas
 Comprueba que el RPM descargado no esté dañado ni haya sido modificado:
 
 ```bash
-sha256sum -c upclink-vpn-1.0.0-1.x86_64.rpm.sha256
+sha256sum -c upclink-vpn-1.0.1-1.x86_64.rpm.sha256
 ```
 
 El resultado debe indicar que **la suma coincide**.
@@ -93,7 +93,7 @@ sudo rpm --import RPM-GPG-KEY-Pep-Simo.asc
 Instala UPClink VPN y sus dependencias:
 
 ```bash
-sudo zypper install ./upclink-vpn-1.0.0-1.x86_64.rpm
+sudo zypper install ./upclink-vpn-1.0.1-1.x86_64.rpm
 ```
 
 ## Añadir UPClink VPN al panel
@@ -143,6 +143,6 @@ Antes de importar la clave, compara siempre esta huella:
 ```bash
 gpg --show-keys --fingerprint packaging/keys/RPM-GPG-KEY-Pep-Simo.asc
 sudo rpm --import packaging/keys/RPM-GPG-KEY-Pep-Simo.asc
-rpm -Kv dist/upclink-vpn-1.0.0-1.x86_64.rpm
-sha256sum -c dist/upclink-vpn-1.0.0-1.x86_64.rpm.sha256
+rpm -Kv dist/upclink-vpn-1.0.1-1.x86_64.rpm
+sha256sum -c dist/upclink-vpn-1.0.1-1.x86_64.rpm.sha256
 ```

@@ -16,7 +16,7 @@
         "Id": "org.upclink.vpn",
         "License": "GPL-3.0-or-later",
         "Name": "UPClink VPN",
-        "Version": "1.0.0",
+        "Version": "1.0.1",
         "Website": "https://www.pepsimo.eu"
     },
     "KPackageStructure": "Plasma/Applet",
