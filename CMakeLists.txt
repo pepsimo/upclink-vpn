@@ -57,6 +57,11 @@ install(PROGRAMS
 )
 
 install(FILES
+    backend/upclink_security.py
+    DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}"
+)
+
+install(FILES
     "${UPCLINK_GENERATED_DIR}/upclink-vpn.service"
     DESTINATION "${SYSTEMD_SYSTEM_UNIT_DIR}"
 )
@@ -144,5 +149,20 @@ set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION
     "/usr/share/polkit-1"
     "/usr/share/polkit-1/actions"
 )
+
+include(CTest)
+
+if(BUILD_TESTING)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+    add_test(
+        NAME backend-security
+        COMMAND
+            "${Python3_EXECUTABLE}"
+            -m unittest discover
+            -s "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+            -v
+    )
+endif()
 
 include(CPack)
