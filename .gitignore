@@ -6,6 +6,7 @@ __pycache__/
 *.token
 *.secret
 *.conf
+!packaging/dbus/org.upclink.VPN.conf
 build/
 dist/
 rpmbuild/
