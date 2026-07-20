@@ -43,7 +43,10 @@ class OperationFailed(dbus.DBusException):
 def sanitize(text):
     """Elimina cookies, tokens y parámetros SAML."""
 
-    value = text.strip()
+    if text is None:
+        return ""
+
+    value = str(text).strip()
 
     replacements = (
         (
@@ -68,6 +71,45 @@ def sanitize(text):
         value = re.sub(pattern, replacement, value)
 
     return value[:500]
+
+
+def safe_vpn_error(text):
+    """Convierte errores de openfortivpn en mensajes públicos seguros."""
+
+    value = sanitize(text).casefold()
+
+    categories = (
+        (
+            ("certificate", "certificado", "x509"),
+            "No se pudo validar el certificado del servidor VPN.",
+        ),
+        (
+            (
+                "resolve",
+                "name or service not known",
+                "temporary failure in name resolution",
+            ),
+            "No se pudo localizar el servidor VPN.",
+        ),
+        (
+            ("authentication", "login", "permission denied", "401", "403"),
+            "La autenticación VPN no se ha completado.",
+        ),
+        (
+            ("timeout", "timed out"),
+            "Se agotó el tiempo de espera al conectar con la VPN.",
+        ),
+        (
+            ("refused", "unreachable", "network is down"),
+            "No se pudo establecer la comunicación con el servidor VPN.",
+        ),
+    )
+
+    for markers, message in categories:
+        if any(marker in value for marker in markers):
+            return message
+
+    return "No se pudo establecer la conexión VPN."
 
 
 class UpclinkVPNService(dbus.service.Object):
@@ -241,8 +283,11 @@ class UpclinkVPNService(dbus.service.Object):
                 started,
             )
 
-        if "error:" in lower:
-            self.last_error = line
+        if any(
+            marker in lower
+            for marker in ("error:", "failed", "failure")
+        ):
+            self.last_error = safe_vpn_error(line)
 
         return GLib.SOURCE_REMOVE
 
