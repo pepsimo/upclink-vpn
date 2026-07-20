@@ -5,6 +5,16 @@ __pycache__/
 *.cookies
 *.token
 *.secret
+.env
+.env.*
+!.env.example
+*.credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
 *.conf
 !packaging/dbus/org.upclink.VPN.conf
 build/
