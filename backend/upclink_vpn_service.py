@@ -50,19 +50,28 @@ def sanitize(text):
 
     replacements = (
         (
-            r"(?i)(SVPNCOOKIE\s*=\s*)\S+",
+            (
+                r"(?i)((?:SVPNCOOKIE|SAMLResponse|SAMLRequest|RelayState)"
+                r"\s*[:=]\s*)\S+"
+            ),
             r"\1[OCULTO]",
         ),
         (
-            r"(?i)([?&]id=)[^&\s]+",
+            (
+                r"(?i)([?&](?:id|token|session|code|SAMLResponse|"
+                r"SAMLRequest|RelayState)=)[^&\s]+"
+            ),
             r"\1[OCULTO]",
         ),
         (
-            r"(?i)((?:cookie|token|password)\s*[:=]\s*)\S+",
+            (
+                r"(?i)((?:cookie|token|password|passwd|secret|session)"
+                r"\s*[:=]\s*)\S+"
+            ),
             r"\1[OCULTO]",
         ),
         (
-            r"(?i)(SAMLResponse\s*[:=]\s*)\S+",
+            r"(?i)(Authorization\s*:\s*(?:Bearer|Basic)\s+)\S+",
             r"\1[OCULTO]",
         ),
     )
