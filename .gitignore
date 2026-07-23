@@ -18,5 +18,6 @@ __pycache__/
 *.conf
 !packaging/dbus/org.upclink.VPN.conf
 build/
+build-*/
 dist/
 rpmbuild/
