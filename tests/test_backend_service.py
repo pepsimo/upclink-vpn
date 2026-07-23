@@ -28,6 +28,8 @@ SPEC.loader.exec_module(SERVICE)
 class FakeProcess:
     """Simula un proceso vivo sin lanzar openfortivpn de verdad."""
 
+    pid = 4242
+
     def poll(self):
         return None
 
@@ -40,6 +42,7 @@ def make_service(state="disconnected", process=None):
     service.connected_since = 0
     service.last_error = ""
     service.disconnect_requested = False
+    service.tunnel_lost = False
     service.StateChanged = lambda *args, **kwargs: None
     return service
 
@@ -77,6 +80,32 @@ class PollProcessTests(unittest.TestCase):
             service.poll_process()
 
         self.assertEqual(service.state, "connected")
+
+    def test_lost_tunnel_kills_orphan_process_and_recovers_on_exit(self):
+        process = FakeProcess()
+        service = make_service(state="connected", process=process)
+        service.connected_since = 100
+
+        with mock.patch.object(
+            SERVICE.UpclinkVPNService,
+            "interface_present",
+            return_value=False,
+        ), mock.patch.object(
+            SERVICE.os,
+            "killpg",
+        ) as killpg:
+            service.poll_process()
+
+        self.assertTrue(service.tunnel_lost)
+        self.assertEqual(service.state, "error")
+        killpg.assert_called_once_with(process.pid, SERVICE.signal.SIGINT)
+
+        service.process_finished(process, -2)
+
+        self.assertIsNone(service.process)
+        self.assertFalse(service.tunnel_lost)
+        self.assertEqual(service.state, "error")
+        self.assertFalse(service.process_running())
 
     def test_no_state_change_while_process_is_not_running(self):
         service = make_service(state="authenticating", process=None)

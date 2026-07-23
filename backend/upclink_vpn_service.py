@@ -66,6 +66,7 @@ class UpclinkVPNService(dbus.service.Object):
         self.connected_since = 0
         self.last_error = ""
         self.disconnect_requested = False
+        self.tunnel_lost = False
 
         GLib.timeout_add_seconds(
             1,
@@ -274,14 +275,22 @@ class UpclinkVPNService(dbus.service.Object):
 
         self.refresh_dns()
 
+        tunnel_lost = self.tunnel_lost
         requested = self.disconnect_requested
         last_error = self.last_error
 
         self.process = None
+        self.tunnel_lost = False
         self.disconnect_requested = False
         self.last_error = ""
 
-        if requested:
+        if tunnel_lost:
+            self.set_state(
+                "error",
+                last_error or "Se ha perdido el túnel VPN.",
+            )
+
+        elif requested:
             self.set_state("disconnected")
 
         elif return_code == 0:
@@ -323,10 +332,22 @@ class UpclinkVPNService(dbus.service.Object):
             )
 
         elif self.state == "connected":
+            self.tunnel_lost = True
+            self.last_error = "Se ha perdido el túnel VPN."
+
             self.set_state(
                 "error",
-                "Se ha perdido el túnel VPN.",
+                self.last_error,
             )
+
+            try:
+                os.killpg(
+                    self.process.pid,
+                    signal.SIGINT,
+                )
+
+            except ProcessLookupError:
+                pass
 
         return GLib.SOURCE_CONTINUE
 
