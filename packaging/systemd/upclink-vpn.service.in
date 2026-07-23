@@ -16,6 +16,7 @@ ProtectHome=true
 UMask=0077
 NoNewPrivileges=true
 ProtectSystem=full
+ReadWritePaths=/etc/resolv.conf
 ProtectClock=true
 ProtectControlGroups=true
 ProtectHostname=true
