@@ -18,23 +18,27 @@ PlasmoidItem {
     readonly property string vpnState: vpn.state
     property string lastMessage: ""
     readonly property double connectedSince:
-        vpn.connectedSince > 0 ? vpn.connectedSince * 1000 : 0
+    vpn.connectedSince > 0 ? vpn.connectedSince * 1000 : 0
     property int clockTick: 0
 
-
+    readonly property string installedVersion: Plasmoid.metaData.version
+    property string latestVersion: ""
+    property string latestReleaseUrl: ""
+    property bool updateAvailable: false
+    property double lastUpdateCheck: 0
 
     readonly property string stateText: {
         switch (vpnState) {
-        case "connected":
-            return "Conectada"
-        case "authenticating":
-            return "Autenticando"
-        case "connecting":
-            return "Conectando"
-        case "error":
-            return "Error"
-        default:
-            return "Desconectada"
+            case "connected":
+                return "Conectada"
+            case "authenticating":
+                return "Autenticando"
+            case "connecting":
+                return "Conectando"
+            case "error":
+                return "Error"
+            default:
+                return "Desconectada"
         }
     }
 
@@ -44,30 +48,30 @@ PlasmoidItem {
         }
 
         switch (vpnState) {
-        case "connected":
-            return "El túnel VPN está activo."
-        case "authenticating":
-            return "Completa la autenticación UPC en el navegador."
-        case "connecting":
-            return "Autenticación completada. Creando el túnel VPN."
-        case "error":
-            return "No se ha podido completar la operación."
-        default:
-            return "La conexión VPN no está activa."
+            case "connected":
+                return "El túnel VPN está activo."
+            case "authenticating":
+                return "Completa la autenticación UPC en el navegador."
+            case "connecting":
+                return "Autenticación completada. Creando el túnel VPN."
+            case "error":
+                return "No se ha podido completar la operación."
+            default:
+                return "La conexión VPN no está activa."
         }
     }
 
     readonly property color stateColor: {
         switch (vpnState) {
-        case "connected":
-            return "#27ae60"
-        case "authenticating":
-        case "connecting":
-            return "#f1c40f"
-        case "error":
-            return "#e74c3c"
-        default:
-            return "#7f8c8d"
+            case "connected":
+                return "#27ae60"
+            case "authenticating":
+            case "connecting":
+                return "#f1c40f"
+            case "error":
+                return "#e74c3c"
+            default:
+                return "#7f8c8d"
         }
     }
 
@@ -107,23 +111,124 @@ PlasmoidItem {
 
         if (actionName === "connect") {
             if (!vpn.connectVpn()) {
-                lastMessage = "No se ha podido solicitar la conexión por D-Bus."
+                lastMessage =
+                "No se ha podido solicitar la conexión por D-Bus."
                 return
             }
         } else if (actionName === "disconnect") {
             if (!vpn.disconnectVpn()) {
-                lastMessage = "No se ha podido solicitar la desconexión por D-Bus."
+                lastMessage =
+                "No se ha podido solicitar la desconexión por D-Bus."
                 return
             }
         } else if (actionName === "sso") {
             const url = vpn.authenticationUrl()
 
             if (url.length === 0) {
-                lastMessage = "La URL de autenticación todavía no está disponible."
+                lastMessage =
+                "La URL de autenticación todavía no está disponible."
                 return
             }
 
             Qt.openUrlExternally(url)
+        }
+    }
+
+    function isNewerVersion(candidate, current) {
+        const candidateParts = candidate.replace(/^v/, "").split(".")
+        const currentParts = current.replace(/^v/, "").split(".")
+        const partCount = Math.max(
+            candidateParts.length,
+            currentParts.length
+        )
+
+        for (let index = 0; index < partCount; index++) {
+            const candidatePart = parseInt(
+                candidateParts[index] || "0",
+                10
+            )
+            const currentPart = parseInt(
+                currentParts[index] || "0",
+                10
+            )
+
+            if (candidatePart > currentPart) {
+                return true
+            }
+
+            if (candidatePart < currentPart) {
+                return false
+            }
+        }
+
+        return false
+    }
+
+    function checkForUpdates() {
+        const now = Date.now()
+
+        if (now - lastUpdateCheck < 86400000) {
+            return
+        }
+
+        lastUpdateCheck = now
+
+        const request = new XMLHttpRequest()
+
+        request.onreadystatechange = function() {
+            if (request.readyState !== XMLHttpRequest.DONE) {
+                return
+            }
+
+            if (request.status !== 200) {
+                return
+            }
+
+            try {
+                const release = JSON.parse(request.responseText)
+                const tag =
+                typeof release.tag_name === "string"
+                ? release.tag_name
+                : ""
+                const url =
+                typeof release.html_url === "string"
+                ? release.html_url
+                : ""
+
+                if (tag.length === 0
+                    || !url.startsWith(
+                        "https://github.com/pepsimo/"
+                        + "upclink-vpn/releases/"
+                    )) {
+                    return
+                    }
+
+                    latestVersion = tag.replace(/^v/, "")
+                    latestReleaseUrl = url
+                    updateAvailable = isNewerVersion(
+                        latestVersion,
+                        installedVersion
+                    )
+            } catch (error) {
+                updateAvailable = false
+            }
+        }
+
+        request.open(
+            "GET",
+            "https://api.github.com/repos/"
+            + "pepsimo/upclink-vpn/releases/latest"
+        )
+        request.setRequestHeader(
+            "Accept",
+            "application/vnd.github+json"
+        )
+        request.send()
+    }
+
+    onExpandedChanged: {
+        if (expanded) {
+            checkForUpdates()
         }
     }
 
@@ -181,10 +286,10 @@ PlasmoidItem {
                     source: "network-vpn"
 
                     Layout.preferredWidth:
-                        Kirigami.Units.iconSizes.large
+                    Kirigami.Units.iconSizes.large
 
                     Layout.preferredHeight:
-                        Kirigami.Units.iconSizes.large
+                    Kirigami.Units.iconSizes.large
                 }
 
                 ColumnLayout {
@@ -208,8 +313,8 @@ PlasmoidItem {
             Rectangle {
                 Layout.fillWidth: true
                 implicitHeight:
-                    statusLayout.implicitHeight
-                    + Kirigami.Units.largeSpacing * 2
+                statusLayout.implicitHeight
+                + Kirigami.Units.largeSpacing * 2
 
                 radius: Kirigami.Units.smallSpacing
                 color: Kirigami.Theme.backgroundColor
@@ -240,15 +345,16 @@ PlasmoidItem {
                         }
 
                         PlasmaComponents.BusyIndicator {
-                            visible: root.vpnState === "authenticating"
-                                     || root.vpnState === "connecting"
+                            visible:
+                            root.vpnState === "authenticating"
+                            || root.vpnState === "connecting"
                             running: visible
 
                             Layout.preferredWidth:
-                                Kirigami.Units.iconSizes.small
+                            Kirigami.Units.iconSizes.small
 
                             Layout.preferredHeight:
-                                Kirigami.Units.iconSizes.small
+                            Kirigami.Units.iconSizes.small
                         }
                     }
 
@@ -261,7 +367,9 @@ PlasmoidItem {
 
                     PlasmaComponents.Label {
                         visible: root.vpnState === "connected"
-                        text: "Tiempo conectado: " + root.elapsedText
+                        text:
+                        "Tiempo conectado: "
+                        + root.elapsedText
                         font.bold: true
                     }
                 }
@@ -273,8 +381,9 @@ PlasmoidItem {
                 text: "Conectar"
                 icon.name: "network-connect"
 
-                visible: root.vpnState === "disconnected"
-                         || root.vpnState === "error"
+                visible:
+                root.vpnState === "disconnected"
+                || root.vpnState === "error"
 
                 enabled: visible
                 onClicked: root.runAction("connect")
@@ -298,9 +407,10 @@ PlasmoidItem {
                 text: "Desconectar"
                 icon.name: "network-disconnect"
 
-                visible: root.vpnState === "authenticating"
-                         || root.vpnState === "connecting"
-                         || root.vpnState === "connected"
+                visible:
+                root.vpnState === "authenticating"
+                || root.vpnState === "connecting"
+                || root.vpnState === "connected"
 
                 enabled: visible
                 onClicked: root.runAction("disconnect")
@@ -318,6 +428,32 @@ PlasmoidItem {
                 opacity: 0.7
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignHCenter
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Kirigami.Units.smallSpacing
+
+                Kirigami.LinkButton {
+                    visible: root.updateAvailable
+                    text:
+                    "Nueva versión "
+                    + root.latestVersion
+                    + " disponible"
+                    onClicked:
+                    Qt.openUrlExternally(
+                        root.latestReleaseUrl
+                    )
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                }
+
+                PlasmaComponents.Label {
+                    text: "Versión " + root.installedVersion
+                    opacity: 0.55
+                }
             }
         }
     }

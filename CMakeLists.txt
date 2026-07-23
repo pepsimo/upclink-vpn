@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.22)
 
 project(
     UPClinkVPN
-    VERSION 1.0.1
+    VERSION 1.0.2
     LANGUAGES CXX
 )
 
@@ -119,7 +119,7 @@ set(CPACK_RPM_PACKAGE_DESCRIPTION
 )
 set(CPACK_RPM_PACKAGE_AUTOREQPROV ON)
 set(CPACK_RPM_PACKAGE_REQUIRES
-    "openfortivpn, polkit, dbus-1, python3-dbus-python, python3-gobject, plasma6-workspace, kf6-kirigami-imports"
+   "openfortivpn, NetworkManager, polkit, dbus-1, python3-dbus-python, python3-gobject, plasma6-workspace, libplasma6-components, kf6-kirigami-imports"
 )
 set(CPACK_RPM_PRE_INSTALL_SCRIPT_FILE
     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/rpm/pre-install.sh"

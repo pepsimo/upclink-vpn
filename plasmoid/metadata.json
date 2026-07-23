@@ -7,7 +7,7 @@
         ],
         "OtherContributors": [
             {
-                "Name": "ChatGPT 5.6 Sol (OpenAI)"
+                "Name": "Claude (Anthropic)"
             }
         ],
         "Category": "Network",
@@ -16,7 +16,7 @@
         "Id": "org.upclink.vpn",
         "License": "GPL-3.0-or-later",
         "Name": "UPClink VPN",
-        "Version": "1.0.1",
+        "Version": "1.0.2",
         "Website": "https://www.pepsimo.eu"
     },
     "KPackageStructure": "Plasma/Applet",

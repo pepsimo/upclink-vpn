@@ -2,7 +2,9 @@
 
 import os
 import signal
+import socket
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -31,6 +33,9 @@ PPP_INTERFACE = "upclink0"
 
 OPENFORTIVPN = "/usr/bin/openfortivpn"
 PKCHECK = "/usr/bin/pkcheck"
+NMCLI = "/usr/bin/nmcli"
+
+SAML_CALLBACK_PORT = 8020
 
 
 class NotAuthorized(dbus.DBusException):
@@ -137,12 +142,13 @@ class UpclinkVPNService(dbus.service.Object):
             ) from error
 
         if result.returncode != 0:
-            message = (
-                sanitize(result.stderr)
-                or "Autorización denegada."
-            )
+            if result.stderr:
+                print(
+                    sanitize(result.stderr),
+                    file=sys.stderr,
+                )
 
-            raise NotAuthorized(message)
+            raise NotAuthorized("Autorización denegada.")
 
     def process_running(self):
         return (
@@ -156,6 +162,44 @@ class UpclinkVPNService(dbus.service.Object):
             "/sys/class/net",
             PPP_INTERFACE,
         ).exists()
+
+    @staticmethod
+    def saml_port_available():
+        with socket.socket(
+            socket.AF_INET,
+            socket.SOCK_STREAM,
+        ) as probe:
+            try:
+                probe.bind(("127.0.0.1", SAML_CALLBACK_PORT))
+            except OSError:
+                return False
+
+        return True
+
+    @staticmethod
+    def refresh_dns():
+        if not Path(NMCLI).is_file():
+            return
+
+        try:
+            subprocess.run(
+                [
+                    NMCLI,
+                    "--wait",
+                    "5",
+                    "general",
+                    "reload",
+                    "dns-rc",
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=10,
+            )
+
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
     def read_output(self, process):
         if process.stdout is None:
@@ -228,6 +272,8 @@ class UpclinkVPNService(dbus.service.Object):
         if process is not self.process:
             return GLib.SOURCE_REMOVE
 
+        self.refresh_dns()
+
         requested = self.disconnect_requested
         last_error = self.last_error
 
@@ -261,10 +307,10 @@ class UpclinkVPNService(dbus.service.Object):
         return GLib.SOURCE_REMOVE
 
     def poll_process(self):
-        if (
-            self.process_running()
-            and self.interface_present()
-        ):
+        if not self.process_running():
+            return GLib.SOURCE_CONTINUE
+
+        if self.interface_present():
             started = (
                 self.connected_since
                 or int(time.time())
@@ -274,6 +320,12 @@ class UpclinkVPNService(dbus.service.Object):
                 "connected",
                 "",
                 started,
+            )
+
+        elif self.state == "connected":
+            self.set_state(
+                "error",
+                "Se ha perdido el túnel VPN.",
             )
 
         return GLib.SOURCE_CONTINUE
@@ -334,10 +386,17 @@ class UpclinkVPNService(dbus.service.Object):
                 "ya está en uso."
             )
 
+        if not self.saml_port_available():
+            raise OperationFailed(
+                "El puerto local de autenticación SAML "
+                f"({SAML_CALLBACK_PORT}) está en uso. "
+                "Ciérralo antes de conectar."
+            )
+
         command = [
             OPENFORTIVPN,
             VPN_HOST,
-            "--saml-login=8020",
+            f"--saml-login={SAML_CALLBACK_PORT}",
             f"--pppd-ifname={PPP_INTERFACE}",
         ]
 
@@ -356,13 +415,15 @@ class UpclinkVPNService(dbus.service.Object):
         except OSError as error:
             self.process = None
 
+            print(str(error), file=sys.stderr)
+
             self.set_state(
                 "error",
-                str(error),
+                "No se pudo iniciar el proceso VPN.",
             )
 
             raise OperationFailed(
-                sanitize(str(error))
+                "No se pudo iniciar el proceso VPN."
             ) from error
 
         self.disconnect_requested = False
@@ -420,7 +481,16 @@ def main():
     DBusGMainLoop(set_as_default=True)
 
     bus = dbus.SystemBus()
-    service = UpclinkVPNService(bus)
+
+    try:
+        service = UpclinkVPNService(bus)
+    except dbus.exceptions.DBusException as error:
+        print(
+            "No se pudo registrar el servicio UPClink VPN "
+            f"en D-Bus: {error}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     loop = GLib.MainLoop()
 
